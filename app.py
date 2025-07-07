@@ -367,7 +367,6 @@ def review_page():
     # Submit button
     if st.button("🚀 Submit Program", type="primary", use_container_width=True):
         st.success("✅ Credit Card Program submitted successfully!")
-        st.balloons()
         
         # Show final summary
         st.subheader("📋 Submission Summary")
