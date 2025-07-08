@@ -198,7 +198,59 @@ def render_field(field_name: str, field_info: Dict, current_value: Any = None):
         min_val = field_info.get("min", 0)
         max_val = field_info.get("max", 100)
         step = field_info.get("step", 1)
-        return st.slider(label, min_value=min_val, max_value=max_val, value=current_value or min_val, step=step)
+        
+        # Handle current_value type conversion
+        if current_value is None:
+            safe_value = min_val
+        elif isinstance(current_value, list):
+            # Convert list to tuple for range slider or take first element for regular slider
+            if len(current_value) > 1:
+                # Range slider - convert to tuple
+                safe_value = tuple(current_value[:2])
+            elif len(current_value) > 0 and isinstance(current_value[0], (int, float)):
+                # Single value - take first element
+                safe_value = current_value[0]
+            else:
+                safe_value = min_val
+        elif isinstance(current_value, (int, float)):
+            safe_value = current_value
+        else:
+            # Try to convert string to number
+            try:
+                safe_value = float(current_value)
+            except (ValueError, TypeError):
+                safe_value = min_val
+        
+        # Determine if we should use int or float based on whether any value contains decimal
+        use_float = (isinstance(min_val, float) or isinstance(max_val, float) or 
+                    isinstance(step, float) or isinstance(safe_value, float) or
+                    (isinstance(safe_value, tuple) and any(isinstance(x, float) for x in safe_value)))
+        
+        # Cast all values to the same type
+        if use_float:
+            min_val = float(min_val)
+            max_val = float(max_val)
+            step = float(step)
+            if isinstance(safe_value, tuple):
+                safe_value = tuple(float(x) for x in safe_value)
+            else:
+                safe_value = float(safe_value)
+        else:
+            min_val = int(min_val)
+            max_val = int(max_val)
+            step = int(step)
+            if isinstance(safe_value, tuple):
+                safe_value = tuple(int(x) for x in safe_value)
+            else:
+                safe_value = int(safe_value)
+        
+        # Ensure safe_value is within bounds
+        if isinstance(safe_value, tuple):
+            safe_value = tuple(max(min_val, min(max_val, x)) for x in safe_value)
+        else:
+            safe_value = max(min_val, min(max_val, safe_value))
+        
+        return st.slider(label, min_value=min_val, max_value=max_val, value=safe_value, step=step)
     
     else:
         return st.text_input(label, value=current_value or "")
@@ -209,35 +261,36 @@ def page_1_basic_details():
     
     # AI Prompt Section
     st.subheader("🤖 AI-Powered Setup")
-    with st.expander("Use AI to auto-fill form fields", expanded=not st.session_state.ai_processed):
-        ai_prompt = st.text_area(
-            "Describe your credit card program setup:",
-            placeholder="Example: Create a new Gold Card program ABC123, launch on Aug 1, 2025, with $50 annual fee, 15% interest rate, and target existing customers...",
-            height=100
-        )
-        
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            if st.button("🚀 Process with AI", type="primary"):
-                if ai_prompt:
-                    with st.spinner("Processing with AI..."):
-                        result = call_openai_api(ai_prompt)
-                        
-                        # Store supported fields in session state
-                        if result.get("supported_fields"):
-                            for field_name, value in result["supported_fields"].items():
-                                st.session_state.form_data[field_name] = value
-                            st.success(f"✅ Auto-filled {len(result['supported_fields'])} fields!")
-                        
-                        # Store unsupported fields
-                        if result.get("unsupported_fields"):
-                            st.session_state.unsupported_fields = result["unsupported_fields"]
-                            st.warning(f"⚠️ {len(result['unsupported_fields'])} fields were mentioned but not supported")
-                        
-                        st.session_state.ai_processed = True
-                        st.rerun()
-                else:
-                    st.error("Please enter a prompt first")
+    st.write("Use AI to auto-fill form fields")
+    
+    ai_prompt = st.text_area(
+        "Describe your credit card program setup:",
+        placeholder="Example: Create a new Gold Card program ABC123, launch on Aug 1, 2025, with $50 annual fee, 15% interest rate, and target existing customers...",
+        height=100
+    )
+    
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("🚀 Process with AI", type="primary"):
+            if ai_prompt:
+                with st.spinner("Processing with AI..."):
+                    result = call_openai_api(ai_prompt)
+                    
+                    # Store supported fields in session state
+                    if result.get("supported_fields"):
+                        for field_name, value in result["supported_fields"].items():
+                            st.session_state.form_data[field_name] = value
+                        st.success(f"✅ Auto-filled {len(result['supported_fields'])} fields!")
+                    
+                    # Store unsupported fields
+                    if result.get("unsupported_fields"):
+                        st.session_state.unsupported_fields = result["unsupported_fields"]
+                        st.warning(f"⚠️ {len(result['unsupported_fields'])} fields were mentioned but not supported")
+                    
+                    st.session_state.ai_processed = True
+                    st.rerun()
+            else:
+                st.error("Please enter a prompt first")
     
     # Form Fields
     st.subheader("Program Information")
@@ -380,8 +433,8 @@ def review_page():
         if st.session_state.unsupported_fields:
             st.write(f"**Unsupported Fields:** {len(st.session_state.unsupported_fields)}")
 
-def render_navigation():
-    """Render navigation buttons"""
+def render_progress_indicator():
+    """Render progress indicator at the top"""
     pages = ["Basic Details", "Product Config", "Eligibility", "Review"]
     current_page = st.session_state.current_page
     
@@ -391,6 +444,14 @@ def render_navigation():
     
     # Page indicator
     st.write(f"Step {current_page + 1} of {len(pages)}: {pages[current_page]}")
+
+def render_navigation_buttons():
+    """Render navigation buttons at the bottom"""
+    pages = ["Basic Details", "Product Config", "Eligibility", "Review"]
+    current_page = st.session_state.current_page
+    
+    # Add spacing before navigation buttons
+    st.markdown("---")
     
     # Navigation buttons
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -414,8 +475,8 @@ def main():
     st.title("💳 Credit Card Program Setup")
     st.markdown("*Internal tool for implementation team*")
     
-    # Render navigation
-    render_navigation()
+    # Render progress indicator at the top
+    render_progress_indicator()
     
     st.markdown("---")
     
@@ -431,15 +492,8 @@ def main():
     elif current_page == 3:
         review_page()
     
-    # Debug information (only in development)
-    with st.expander("🔧 Debug Information", expanded=False):
-        st.write("**Session State:**")
-        st.json({
-            "current_page": st.session_state.current_page,
-            "form_data_keys": list(st.session_state.form_data.keys()),
-            "unsupported_fields": st.session_state.unsupported_fields,
-            "ai_processed": st.session_state.ai_processed
-        })
+    # Render navigation buttons at the bottom
+    render_navigation_buttons()
 
 if __name__ == "__main__":
     main() 
